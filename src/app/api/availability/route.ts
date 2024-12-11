@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { usernames, duration = 30, startDate, endDate }: AvailabilityRequest = 
+    const { usernames, duration = 30, startDate }: AvailabilityRequest = 
       await request.json()
 
     if (!usernames?.length) {
@@ -26,24 +26,23 @@ export async function POST(request: Request) {
     }
 
     const start = startDate ? parseISO(startDate) : new Date()
-    const end = endDate ? parseISO(endDate) : addDays(start, 7)
 
-    // Use duration in mock data to fix the unused variable error
+    // Mock data for development
     const mockSlots: CommonSlot[] = [
       {
-        date: formatSlotDate(new Date()),
-        time: formatSlotTime(new Date()),
-        duration: `${duration}min`  // Using duration here
+        date: formatSlotDate(start),
+        time: formatSlotTime(start),
+        duration: `${duration}min`
       },
       {
-        date: formatSlotDate(addDays(new Date(), 1)),
+        date: formatSlotDate(addDays(start, 1)),
         time: '2:00 PM',
-        duration: `${duration}min`  // Using duration here
+        duration: `${duration}min`
       },
       {
-        date: formatSlotDate(addDays(new Date(), 2)),
+        date: formatSlotDate(addDays(start, 2)),
         time: '11:30 AM',
-        duration: `${duration}min`  // Using duration here
+        duration: `${duration}min`
       }
     ]
 
