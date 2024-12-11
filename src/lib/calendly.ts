@@ -1,8 +1,7 @@
 // src/lib/calendly.ts
-import { CommonSlot, CalendlyAvailability, AvailabilityResponse } from '@/lib/types'
+import type { CommonSlot, AvailabilityResponse } from './types'
 import { format } from 'date-fns'
 
-// Function to fetch common availability times from our API
 export async function findCommonAvailability(usernames: string[]): Promise<CommonSlot[]> {
   try {
     const response = await fetch('/api/availability', {
@@ -28,12 +27,10 @@ export async function findCommonAvailability(usernames: string[]): Promise<Commo
   }
 }
 
-// Helper function to format a date object to our desired string format
 export function formatSlotTime(date: Date): string {
-  return format(date, 'h:mm a')  // "10:00 AM"
+  return format(date, 'h:mm a')
 }
 
-// Helper function to format a date object to our desired date format
 export function formatSlotDate(date: Date): string {
-  return format(date, 'yyyy-MM-dd')  // "2024-12-15"
+  return format(date, 'yyyy-MM-dd')
 }
