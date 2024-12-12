@@ -3,17 +3,20 @@ import { CommonSlot, AvailabilityResponse, CalendlyEventInfo } from './types'
 import { parseISO, format } from 'date-fns'
 
 export function parseCalendlyUrl(url: string): CalendlyEventInfo {
-  const cleanUrl = url.trim().toLowerCase()
-  const urlPattern = /^(?:https?:\/\/)?(?:www\.)?calendly\.com\/([^\/]+)\/([^\/\?]+)/
-  const match = cleanUrl.match(urlPattern)
-  
-  if (!match) {
-    throw new Error('Invalid Calendly URL format')
-  }
-  
-  return {
-    username: match[1],
-    eventSlug: match[2]
+  try {
+    const urlObj = new URL(url)
+    const pathParts = urlObj.pathname.split('/').filter(Boolean)
+    
+    if (pathParts.length < 2) {
+      throw new Error('Invalid Calendly URL format')
+    }
+
+    return {
+      username: pathParts[0],
+      eventSlug: pathParts[1]
+    }
+  } catch (error) {
+    throw new Error(`Invalid Calendly URL: ${error instanceof Error ? error.message : 'Unknown error'}`)
   }
 }
 
@@ -23,11 +26,6 @@ export async function findCommonAvailability(
   endDate: string
 ): Promise<CommonSlot[]> {
   try {
-    // Validate inputs
-    if (!eventUrls.length) {
-      throw new Error('No event URLs provided')
-    }
-
     const response = await fetch('/api/availability', {
       method: 'POST',
       headers: {

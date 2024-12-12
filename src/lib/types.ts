@@ -1,6 +1,6 @@
 // src/lib/types.ts
 export interface AvailabilityRequest {
-  eventUrls: string[]    // Changed from usernames to eventUrls
+  eventUrls: string[]
   startDate: string
   endDate: string
 }
@@ -19,4 +19,10 @@ export interface AvailabilityResponse {
 export interface CalendlyEventInfo {
   username: string
   eventSlug: string
+}
+
+export interface CalendlyAvailableSpot {
+  start_time: string
+  status: string
+  scheduling_url: string
 }

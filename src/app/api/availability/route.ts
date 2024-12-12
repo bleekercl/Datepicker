@@ -9,56 +9,71 @@ export async function POST(request: Request) {
 
     if (!eventUrls?.length) {
       return NextResponse.json(
-        { error: 'No event URLs provided' },
+        { error: "No event URLs provided" },
         { status: 400 }
       )
     }
 
-    // Validate and parse all URLs
-    await Promise.all(
-      eventUrls.map(async (url) => {
-        const parsedUrl = parseCalendlyUrl(url)
-        if (!parsedUrl) {
-          throw new Error(`Invalid URL format: ${url}`)
-        }
-        return parsedUrl
-      })
-    )
-
-    // Fetch availability for each event URL in parallel
+    // Fetch availability data for each URL
     const availabilityPromises = eventUrls.map(async (url) => {
-      const { username, eventSlug } = parseCalendlyUrl(url)
-      const response = await fetch(
-        `https://calendly.com/${username}/${eventSlug}/available_spots`
-      )
+      try {
+        // Use a simple HEAD request first to validate the URL
+        const checkResponse = await fetch(url, { method: 'HEAD' })
+        if (!checkResponse.ok) {
+          throw new Error(`Invalid Calendly URL: ${url}`)
+        }
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch availability for ${username}`)
+        // Construct the proper URL for availability data
+        const originalUrl = new URL(url)
+        const availabilityUrl = new URL(`${originalUrl.origin}${originalUrl.pathname}/available_spots`)
+        availabilityUrl.searchParams.set('month', originalUrl.searchParams.get('month') || new Date().toISOString().split('T')[0].substring(0, 7))
+
+        const availabilityResponse = await fetch(availabilityUrl.toString(), {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          cache: 'no-store'
+        })
+
+        if (!availabilityResponse.ok) {
+          throw new Error(`Failed to fetch availability for ${url}`)
+        }
+
+        const data = await availabilityResponse.json()
+        return data
+
+      } catch (error) {
+        console.error(`Error processing URL ${url}:`, error)
+        throw error
       }
-
-      return response.json()
     })
 
-    const availabilities = await Promise.all(availabilityPromises)
+    let availabilities
+    try {
+      availabilities = await Promise.all(availabilityPromises)
+    } catch (error) {
+      return NextResponse.json({
+        error: `Failed to fetch availabilities: ${error instanceof Error ? error.message : 'Unknown error'}`
+      }, { status: 500 })
+    }
 
-    // Find common time slots
-    const commonSlots: CommonSlot[] = availabilities[0].spots.map((slot: { start_time: string; duration: number }) => ({
-      date: formatSlotDate(slot.start_time),
-      time: formatSlotTime(slot.start_time),
-      duration: `${slot.duration}min`
-    }))
+    // For debugging
+    console.log('Availabilities:', JSON.stringify(availabilities, null, 2))
 
-    return NextResponse.json({ slots: commonSlots })
+    // Return mock data for testing
+    const mockSlots: CommonSlot[] = [{
+      date: formatSlotDate(new Date().toISOString()),
+      time: "10:00 AM",
+      duration: "30min"
+    }]
+
+    return NextResponse.json({ slots: mockSlots })
 
   } catch (error) {
-    console.error('Availability error:', error)
-    return NextResponse.json(
-      { 
-        error: error instanceof Error 
-          ? error.message 
-          : 'Failed to fetch availability' 
-      },
-      { status: 500 }
-    )
+    console.error('API error:', error)
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "An unexpected error occurred"
+    }, { status: 500 })
   }
 }
