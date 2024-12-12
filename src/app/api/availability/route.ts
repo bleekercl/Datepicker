@@ -1,80 +1,101 @@
 // src/app/api/availability/route.ts
 import { NextResponse } from 'next/server'
-import type { CommonSlot, AvailabilityRequest } from '@/lib/types'
-import { formatSlotDate } from '@/lib/calendly'
+import type { AvailabilityRequest, CommonSlot, CalendlyUser } from '@/lib/types'
+import { formatDateForDisplay, formatTimeForDisplay } from '@/lib/calendly'
+
+const CALENDLY_API_KEY = process.env.CALENDLY_API_KEY
 
 export async function POST(request: Request) {
+  if (!CALENDLY_API_KEY) {
+    return NextResponse.json(
+      { error: 'Calendly API not configured' },
+      { status: 500 }
+    )
+  }
+
   try {
-    const { eventUrls }: AvailabilityRequest = await request.json()
+    const { eventUrls, startDate, endDate }: AvailabilityRequest = await request.json()
 
     if (!eventUrls?.length) {
       return NextResponse.json(
-        { error: "No event URLs provided" },
+        { error: 'No event URLs provided' },
         { status: 400 }
       )
     }
 
-    // Fetch availability data for each URL
+    // Fetch user data and available times for each URL
     const availabilityPromises = eventUrls.map(async (url) => {
-      try {
-        // Validate and process URL
-        const originalUrl = new URL(url)
-        // Use a simple HEAD request first to validate the URL
-        const checkResponse = await fetch(url, { method: 'HEAD' })
-        if (!checkResponse.ok) {
-          throw new Error(`Invalid Calendly URL: ${url}`)
-        }
-
-        // Construct the proper URL for availability data
-        const availabilityUrl = new URL(`${originalUrl.origin}${originalUrl.pathname}/available_spots`)
-        availabilityUrl.searchParams.set('month', originalUrl.searchParams.get('month') || new Date().toISOString().split('T')[0].substring(0, 7))
-
-        const availabilityResponse = await fetch(availabilityUrl.toString(), {
+      const username = url.split('/').filter(Boolean).pop() || ''
+      
+      const userResponse = await fetch(
+        `https://api.calendly.com/users/${username}`,
+        {
           headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          },
-          cache: 'no-store'
-        })
-
-        if (!availabilityResponse.ok) {
-          throw new Error(`Failed to fetch availability for ${url}`)
+            Authorization: `Bearer ${CALENDLY_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
         }
+      )
 
-        const data = await availabilityResponse.json()
-        return data
-
-      } catch (error) {
-        console.error(`Error processing URL ${url}:`, error)
-        throw error
+      if (!userResponse.ok) {
+        throw new Error(`Invalid Calendly user: ${username}`)
       }
+
+      const userData: CalendlyUser = await userResponse.json()
+
+      const availabilityResponse = await fetch(
+        `https://api.calendly.com/user_availability_schedules/${userData.uri}/available_times?` +
+        new URLSearchParams({
+          start_time: startDate,
+          end_time: endDate
+        }),
+        {
+          headers: {
+            Authorization: `Bearer ${CALENDLY_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+
+      if (!availabilityResponse.ok) {
+        throw new Error(`Failed to fetch availability for ${username}`)
+      }
+
+      return availabilityResponse.json()
     })
 
-    let availabilities
-    try {
-      availabilities = await Promise.all(availabilityPromises)
-    } catch (error) {
-      return NextResponse.json({
-        error: `Failed to fetch availabilities: ${error instanceof Error ? error.message : 'Unknown error'}`
-      }, { status: 500 })
-    }
+    const availabilities = await Promise.all(availabilityPromises)
 
-    // For debugging
-    console.log('Availabilities:', JSON.stringify(availabilities, null, 2))
+    // Find common slots with proper typing
+    const commonSlots = availabilities.reduce<CommonSlot[]>((common, current) => {
+      // Transform current availability into CommonSlot format
+      const currentSlots: CommonSlot[] = current.available_times.map((availableTime: { start_time: string }) => ({
+        date: formatDateForDisplay(availableTime.start_time),
+        time: formatTimeForDisplay(availableTime.start_time),
+        duration: '30min'
+      }))
 
-    // Return mock data for testing
-    const mockSlots: CommonSlot[] = [{
-      date: formatSlotDate(new Date().toISOString()),
-      time: "10:00 AM",
-      duration: "30min"
-    }]
+      // If this is the first set of slots, return them as is
+      if (common.length === 0) {
+        return currentSlots
+      }
 
-    return NextResponse.json({ slots: mockSlots })
+      // Find overlapping slots
+      return common.filter((commonSlot) => 
+        currentSlots.some((currentSlot) => 
+          currentSlot.date === commonSlot.date && 
+          currentSlot.time === commonSlot.time
+        )
+      )
+    }, [])
+
+    return NextResponse.json({ slots: commonSlots })
 
   } catch (error) {
     console.error('API error:', error)
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : "An unexpected error occurred"
-    }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'An unexpected error occurred' },
+      { status: 500 }
+    )
   }
 }

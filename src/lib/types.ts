@@ -16,13 +16,18 @@ export interface AvailabilityResponse {
   error?: string
 }
 
-export interface CalendlyEventInfo {
-  username: string
-  eventSlug: string
+export interface CalendlyUser {
+  uri: string
+  email: string
+  name: string
+  scheduling_url: string
+  timezone: string
 }
 
-export interface CalendlyAvailableSpot {
-  start_time: string
-  status: string
-  scheduling_url: string
+export interface CalendlySchedulingInfo {
+  uri: string
+  available_times: Array<{
+    start_time: string
+    invitees_remaining: number
+  }>
 }

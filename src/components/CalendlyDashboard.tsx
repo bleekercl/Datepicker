@@ -21,15 +21,15 @@ export default function CalendlyDashboard() {
   })
 
   const addUrlField = () => {
-    setEventUrls(prev => [...prev, ""])
+    setEventUrls((prev) => [...prev, ""])
   }
 
   const removeUrlField = (indexToRemove: number) => {
-    setEventUrls(prev => prev.filter((_, index) => index !== indexToRemove))
+    setEventUrls((prev) => prev.filter((_, index) => index !== indexToRemove))
   }
 
   const updateUrl = (index: number, newValue: string) => {
-    setEventUrls(prev => {
+    setEventUrls((prev) => {
       const updated = [...prev]
       updated[index] = newValue
       return updated
@@ -38,14 +38,12 @@ export default function CalendlyDashboard() {
   }
 
   const handleSubmit = async () => {
-    // Validate empty fields
-    if (eventUrls.some(url => !url.trim())) {
+    if (eventUrls.some((url) => !url.trim())) {
       setError("Please fill in all Calendly event URLs")
       return
     }
 
-    // Validate URL format
-    if (!eventUrls.every(url => url.includes("calendly.com/"))) {
+    if (!eventUrls.every((url) => url.includes("calendly.com/"))) {
       setError("Please enter complete Calendly URLs starting with calendly.com/")
       return
     }
@@ -107,7 +105,7 @@ export default function CalendlyDashboard() {
                 <input
                   type="text"
                   value={url}
-                  onChange={e => updateUrl(index, e.target.value)}
+                  onChange={(e) => updateUrl(index, e.target.value)}
                   placeholder="Enter complete Calendly event URL"
                   className="w-full rounded-lg border-gray-200 text-gray-900 placeholder:text-gray-400"
                 />
@@ -116,6 +114,7 @@ export default function CalendlyDashboard() {
                     onClick={() => removeUrlField(index)}
                     className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                     aria-label="Remove URL field"
+                    type="button"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -135,7 +134,7 @@ export default function CalendlyDashboard() {
                   value={dateRange.startDate}
                   min={new Date().toISOString().split("T")[0]}
                   onChange={(e) => {
-                    setDateRange(prev => ({
+                    setDateRange((prev) => ({
                       ...prev,
                       startDate: e.target.value
                     }))
@@ -154,7 +153,7 @@ export default function CalendlyDashboard() {
                   min={dateRange.startDate}
                   max={addDays(new Date(dateRange.startDate), 7).toISOString().split("T")[0]}
                   onChange={(e) => {
-                    setDateRange(prev => ({
+                    setDateRange((prev) => ({
                       ...prev,
                       endDate: e.target.value
                     }))
@@ -176,7 +175,7 @@ export default function CalendlyDashboard() {
 
             <button
               onClick={handleSubmit}
-              disabled={isLoading || eventUrls.some(u => !u.trim())}
+              disabled={isLoading || eventUrls.some((u) => !u.trim())}
               type="button"
               className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
