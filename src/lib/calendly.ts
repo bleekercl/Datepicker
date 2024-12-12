@@ -1,43 +1,75 @@
 // src/lib/calendly.ts
-import { CommonSlot, AvailabilityResponse, CalendlyBusyTime, CalendlySchedule } from './types'
+import { CommonSlot, AvailabilityResponse, CalendlyEventInfo } from './types'
 import { parseISO, format, differenceInDays } from 'date-fns'
 
-export async function findCommonAvailability(
-  usernames: string[],
-  startDate: string,
-  endDate: string,
-  duration: number = 30
-): Promise<CommonSlot[]> {
-  // Validate date range
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  const dayDiff = differenceInDays(end, start)
-
-  if (dayDiff > 7) {
-    throw new Error('Date range cannot exceed 7 days')
-  }
-
-  if (dayDiff < 0) {
-    throw new Error('End date must be after start date')
-  }
-
+export function parseCalendlyUrl(url: string): CalendlyEventInfo {
   try {
+    // Handle different URL formats
+    const cleanUrl = url.trim().toLowerCase()
+    
+    // Match URLs like: https://calendly.com/jeroen-stolk/20min-adviesgesprek
+    const urlPattern = /^(?:https?:\/\/)?(?:www\.)?calendly\.com\/([^\/]+)\/([^\/\?]+)/
+    const match = cleanUrl.match(urlPattern)
+    
+    if (!match) {
+      throw new Error('Invalid Calendly URL format')
+    }
+    
+    return {
+      username: match[1],
+      eventSlug: match[2]
+    }
+  } catch (error) {
+    throw new Error(`Invalid Calendly URL: ${url}`)
+  }
+}
+
+export async function findCommonAvailability(
+  eventUrls: string[],
+  startDate: string,
+  endDate: string
+): Promise<CommonSlot[]> {
+  try {
+    // Validate inputs
+    if (!eventUrls.length) {
+      throw new Error('No event URLs provided')
+    }
+
+    // Validate date range
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    const dayDiff = differenceInDays(end, start)
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      throw new Error('Invalid date format')
+    }
+
+    if (dayDiff > 7) {
+      throw new Error('Date range cannot exceed 7 days')
+    }
+
+    if (dayDiff < 0) {
+      throw new Error('End date must be after start date')
+    }
+
+    // Parse all URLs first to validate them
+    const eventInfos = eventUrls.map(url => parseCalendlyUrl(url))
+
     const response = await fetch('/api/availability', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        usernames,
+        eventUrls,
         startDate,
-        endDate,
-        duration
+        endDate
       }),
     })
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.message || 'Failed to fetch availability')
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to fetch availability')
     }
 
     const data = await response.json() as AvailabilityResponse
@@ -56,58 +88,4 @@ export function formatSlotTime(date: string): string {
 
 export function formatSlotDate(date: string): string {
   return format(parseISO(date), 'yyyy-MM-dd')
-}
-
-export function generateTimeSlots(
-  start: string,
-  end: string,
-  durationMinutes: number
-): Date[] {
-  const slots: Date[] = []
-  let currentSlot = new Date(start)
-  const endTime = new Date(end)
-
-  while (currentSlot < endTime) {
-    slots.push(new Date(currentSlot))
-    currentSlot = new Date(currentSlot.getTime() + durationMinutes * 60000)
-  }
-
-  return slots
-}
-
-export function isWithinWorkingHours(
-  slot: Date,
-  schedule: CalendlySchedule
-): boolean {
-  const dayOfWeek = format(slot, 'EEEE').toLowerCase()
-  const timeString = format(slot, 'HH:mm')
-
-  const rule = schedule.collection[0]?.rules.find(r => 
-    r.type === 'wday' && r.wday === dayOfWeek
-  )
-
-  if (!rule) return false
-
-  return rule.intervals.some(interval => {
-    return timeString >= interval.from && timeString <= interval.to
-  })
-}
-
-export function hasNoConflicts(
-  slot: Date,
-  duration: number,
-  busyTimes: CalendlyBusyTime[]
-): boolean {
-  const slotEnd = new Date(slot.getTime() + duration * 60000)
-
-  return !busyTimes.some(busy => {
-    const busyStart = new Date(busy.start_time)
-    const busyEnd = new Date(busy.end_time)
-
-    return (
-      (slot >= busyStart && slot < busyEnd) ||
-      (slotEnd > busyStart && slotEnd <= busyEnd) ||
-      (slot <= busyStart && slotEnd >= busyEnd)
-    )
-  })
 }

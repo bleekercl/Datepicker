@@ -2,15 +2,16 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, X, Calendar, Clock, Loader2 } from 'lucide-react'
+import { Plus, X, Calendar, Clock, Loader2, AlertCircle, Link } from 'lucide-react'
 import { findCommonAvailability } from '@/lib/calendly'
 import type { CommonSlot } from '@/lib/types'
 import { addDays } from 'date-fns'
 
-const INITIAL_USERNAME = ['']
+const INITIAL_URL = ['']
+const URL_EXAMPLE = 'https://calendly.com/username/event-name'
 
 export default function CalendlyDashboard() {
-  const [usernames, setUsernames] = useState<string[]>(INITIAL_USERNAME)
+  const [eventUrls, setEventUrls] = useState<string[]>(INITIAL_URL)
   const [commonSlots, setCommonSlots] = useState<CommonSlot[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,52 +20,48 @@ export default function CalendlyDashboard() {
     endDate: addDays(new Date(), 7).toISOString().split('T')[0]
   })
 
-  const addUsernameField = () => {
-    setUsernames(prev => [...prev, ''])
+  const addUrlField = () => {
+    setEventUrls(prev => [...prev, ''])
   }
 
-  const removeUsernameField = (indexToRemove: number) => {
-    setUsernames(prev => prev.filter((_, index) => index !== indexToRemove))
+  const removeUrlField = (indexToRemove: number) => {
+    setEventUrls(prev => prev.filter((_, index) => index !== indexToRemove))
   }
 
-  const updateUsername = (index: number, newValue: string) => {
-    setUsernames(prev => {
+  const updateUrl = (index: number, newValue: string) => {
+    setEventUrls(prev => {
       const updated = [...prev]
       updated[index] = newValue
       return updated
     })
+    setError(null)
   }
 
   const handleSubmit = async () => {
-    // Validate inputs
-    if (usernames.some(username => !username.trim())) {
-      setError('All username fields must be filled')
+    if (eventUrls.some(url => !url.trim())) {
+      setError('Please fill in all Calendly event URLs')
       return
     }
 
-    const start = new Date(dateRange.startDate)
-    const end = new Date(dateRange.endDate)
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      setError('Invalid date range')
-      return
-    }
-
-    if (end < start) {
-      setError('End date must be after start date')
+    if (!eventUrls.every(url => url.includes('calendly.com/'))) {
+      setError('Please enter complete Calendly URLs starting with calendly.com/')
       return
     }
 
     setIsLoading(true)
     setError(null)
+    setCommonSlots([])
 
     try {
       const slots = await findCommonAvailability(
-        usernames,
+        eventUrls,
         dateRange.startDate,
         dateRange.endDate
       )
       setCommonSlots(slots)
+      if (slots.length === 0) {
+        setError('No common availability found in the selected date range')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch availability')
     } finally {
@@ -80,26 +77,43 @@ export default function CalendlyDashboard() {
         </h1>
 
         <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5">
+          <div className="mb-6 rounded-lg bg-blue-50 p-4 text-sm text-blue-700">
+            <div className="flex items-start gap-2">
+              <Link className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <p className="font-medium">How to use:</p>
+                <ol className="mt-1 list-decimal pl-4">
+                  <li>Copy the complete Calendly event URL from each person's scheduling page</li>
+                  <li>Paste each URL below (e.g., {URL_EXAMPLE})</li>
+                  <li>Select a date range (max 7 days)</li>
+                  <li>Click find to see common available slots</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 p-4 text-sm text-red-600">
-              {error}
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 p-4 text-sm text-red-600">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <p>{error}</p>
             </div>
           )}
 
           <div className="space-y-3">
-            {usernames.map((username, index) => (
+            {eventUrls.map((url, index) => (
               <div key={index} className="flex gap-2">
                 <input
                   type="text"
-                  value={username}
-                  onChange={e => updateUsername(index, e.target.value)}
-                  placeholder="Enter Calendly username"
+                  value={url}
+                  onChange={e => updateUrl(index, e.target.value)}
+                  placeholder="Enter complete Calendly event URL"
                   className="w-full rounded-lg border-gray-200 text-gray-900 placeholder:text-gray-400"
                 />
-                {usernames.length > 1 && (
+                {eventUrls.length > 1 && (
                   <button
-                    onClick={() => removeUsernameField(index)}
+                    onClick={() => removeUrlField(index)}
                     className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Remove field"
                   >
                     <X className="h-5 w-5" />
                   </button>
@@ -108,7 +122,6 @@ export default function CalendlyDashboard() {
             ))}
           </div>
 
-          {/* Date Range Selection */}
           <div className="mt-4 space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -119,10 +132,13 @@ export default function CalendlyDashboard() {
                   type="date"
                   value={dateRange.startDate}
                   min={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setDateRange(prev => ({
-                    ...prev,
-                    startDate: e.target.value
-                  }))}
+                  onChange={(e) => {
+                    setDateRange(prev => ({
+                      ...prev,
+                      startDate: e.target.value
+                    }))
+                    setError(null)
+                  }}
                   className="w-full rounded-lg border-gray-200 text-gray-900"
                 />
               </div>
@@ -135,32 +151,35 @@ export default function CalendlyDashboard() {
                   value={dateRange.endDate}
                   min={dateRange.startDate}
                   max={addDays(new Date(dateRange.startDate), 7).toISOString().split('T')[0]}
-                  onChange={(e) => setDateRange(prev => ({
-                    ...prev,
-                    endDate: e.target.value
-                  }))}
+                  onChange={(e) => {
+                    setDateRange(prev => ({
+                      ...prev,
+                      endDate: e.target.value
+                    }))
+                    setError(null)
+                  }}
                   className="w-full rounded-lg border-gray-200 text-gray-900"
                 />
               </div>
             </div>
 
             <button
-              onClick={addUsernameField}
+              onClick={addUrlField}
               className="flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white p-2 text-gray-600 hover:bg-gray-50"
             >
               <Plus className="mr-2 h-4 w-4" />
-              Add Another Username
+              Add Another URL
             </button>
 
             <button
               onClick={handleSubmit}
-              disabled={isLoading || usernames.some(u => !u.trim())}
+              disabled={isLoading || eventUrls.some(u => !u.trim())}
               className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Finding...
+                  Finding Available Slots...
                 </>
               ) : (
                 'Find Common Available Slots'

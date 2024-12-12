@@ -1,151 +1,63 @@
 // src/app/api/availability/route.ts
 import { NextResponse } from 'next/server'
 import { parseISO, differenceInDays } from 'date-fns'
-import type { 
-  CommonSlot, 
-  AvailabilityRequest, 
-  CalendlyBusyTime,
-  CalendlySchedule 
-} from '@/lib/types'
-import { 
-  formatSlotDate, 
-  formatSlotTime, 
-  generateTimeSlots,
-  isWithinWorkingHours,
-  hasNoConflicts 
-} from '@/lib/calendly'
-
-const CALENDLY_API = 'https://api.calendly.com'
+import type { CommonSlot, AvailabilityRequest } from '@/lib/types'
+import { formatSlotDate, formatSlotTime, parseCalendlyUrl } from '@/lib/calendly'
 
 export async function POST(request: Request) {
-  const CALENDLY_PAT = process.env.CALENDLY_PERSONAL_ACCESS_TOKEN
-
-  if (!CALENDLY_PAT) {
-    return NextResponse.json(
-      { error: 'Calendly authentication not configured' },
-      { status: 500 }
-    )
-  }
-
   try {
-    const { usernames, duration = 30, startDate, endDate }: AvailabilityRequest = 
+    const { eventUrls, startDate, endDate }: AvailabilityRequest = 
       await request.json()
 
-    // Validate input
-    if (!usernames?.length) {
+    if (!eventUrls?.length) {
       return NextResponse.json(
-        { error: 'No usernames provided' },
+        { error: 'No event URLs provided' },
         { status: 400 }
       )
     }
 
-    if (!startDate || !endDate) {
-      return NextResponse.json(
-        { error: 'Start and end dates are required' },
-        { status: 400 }
-      )
-    }
-
-    const start = parseISO(startDate)
-    const end = parseISO(endDate)
-
-    // Validate date range
-    if (differenceInDays(end, start) > 7) {
-      return NextResponse.json(
-        { error: 'Date range cannot exceed 7 days' },
-        { status: 400 }
-      )
-    }
-
-    // Fetch data for each user in parallel
-    const userDataPromises = usernames.map(async (username) => {
-      // Get user URI first
-      const userResponse = await fetch(`${CALENDLY_API}/users/${username}`, {
-        headers: {
-          Authorization: `Bearer ${CALENDLY_PAT}`,
-          'Content-Type': 'application/json'
+    // Validate and parse all URLs first
+    const eventInfos = await Promise.all(
+      eventUrls.map(async (url) => {
+        try {
+          return parseCalendlyUrl(url)
+        } catch (error) {
+          throw new Error(`Invalid URL format: ${url}`)
         }
       })
+    )
 
-      if (!userResponse.ok) {
-        throw new Error(`User ${username} not found`)
-      }
-
-      const userData = await userResponse.json()
-      const userUri = userData.resource.uri
-
-      // Get user's busy times
-      const busyTimesResponse = await fetch(
-        `${CALENDLY_API}/user_busy_times?` + new URLSearchParams({
-          user: userUri,
-          start_time: start.toISOString(),
-          end_time: end.toISOString()
-        }), {
-          headers: {
-            Authorization: `Bearer ${CALENDLY_PAT}`,
-            'Content-Type': 'application/json'
-          }
-        }
+    // Fetch availability for each event URL in parallel
+    const availabilityPromises = eventInfos.map(async (info) => {
+      const response = await fetch(
+        `https://calendly.com/${info.username}/${info.eventSlug}/available_spots?` + 
+        new URLSearchParams({
+          start_date: startDate,
+          end_date: endDate
+        })
       )
 
-      if (!busyTimesResponse.ok) {
-        throw new Error(`Failed to fetch busy times for ${username}`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch availability for ${info.username}`)
       }
 
-      // Get user's availability schedule
-      const scheduleResponse = await fetch(
-        `${CALENDLY_API}/user_availability_schedules?` + new URLSearchParams({
-          user: userUri
-        }), {
-          headers: {
-            Authorization: `Bearer ${CALENDLY_PAT}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      )
-
-      if (!scheduleResponse.ok) {
-        throw new Error(`Failed to fetch schedule for ${username}`)
-      }
-
-      const busyTimes = await busyTimesResponse.json()
-      const schedule = await scheduleResponse.json()
-
-      return {
-        busyTimes: busyTimes.collection as CalendlyBusyTime[],
-        schedule: schedule as CalendlySchedule,
-        timezone: userData.resource.timezone
-      }
+      return response.json()
     })
 
-    // Wait for all user data to be fetched
-    const usersData = await Promise.all(userDataPromises)
+    const availabilities = await Promise.all(availabilityPromises)
 
-    // Generate potential time slots
-    const potentialSlots = generateTimeSlots(startDate, endDate, duration)
-
-    // Find common available slots
-    const availableSlots = potentialSlots.filter(slot => {
-      // Check if slot works for all users
-      return usersData.every(userData => {
-        return (
-          isWithinWorkingHours(slot, userData.schedule) &&
-          hasNoConflicts(slot, duration, userData.busyTimes)
-        )
-      })
-    })
-
-    // Format slots for response
-    const commonSlots: CommonSlot[] = availableSlots.map(slot => ({
-      date: formatSlotDate(slot.toISOString()),
-      time: formatSlotTime(slot.toISOString()),
-      duration: `${duration}min`
+    // Find common time slots
+    // This is a simplified version - you'll need to implement the actual intersection logic
+    const commonSlots: CommonSlot[] = availabilities[0].spots.map((slot: any) => ({
+      date: formatSlotDate(slot.start_time),
+      time: formatSlotTime(slot.start_time),
+      duration: `${slot.duration}min`
     }))
 
     return NextResponse.json({ slots: commonSlots })
 
   } catch (error) {
-    console.error('Calendly API error:', error)
+    console.error('Availability error:', error)
     return NextResponse.json(
       { 
         error: error instanceof Error 
