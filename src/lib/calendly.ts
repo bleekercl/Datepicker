@@ -1,13 +1,6 @@
 // src/lib/calendly.ts
-import {
-  CommonSlot,
-  AvailabilityResponse,
-  CalendlyBusyTime,
-  CalendlySchedule
-} from './types'
-import { format, parseISO, addDays, differenceInDays } from 'date-fns'
-
-const BASE_URL = 'https://api.calendly.com'
+import { CommonSlot, AvailabilityResponse, CalendlyBusyTime, CalendlySchedule } from './types'
+import { parseISO, format, differenceInDays } from 'date-fns'
 
 export async function findCommonAvailability(
   usernames: string[],
@@ -29,7 +22,6 @@ export async function findCommonAvailability(
   }
 
   try {
-    // Call our API endpoint that will handle Calendly API interactions
     const response = await fetch('/api/availability', {
       method: 'POST',
       headers: {
@@ -58,7 +50,6 @@ export async function findCommonAvailability(
   }
 }
 
-// Utility functions for date/time formatting
 export function formatSlotTime(date: string): string {
   return format(parseISO(date), 'h:mm a')
 }
@@ -67,7 +58,6 @@ export function formatSlotDate(date: string): string {
   return format(parseISO(date), 'yyyy-MM-dd')
 }
 
-// Helper function to generate time slots
 export function generateTimeSlots(
   start: string,
   end: string,
@@ -85,7 +75,6 @@ export function generateTimeSlots(
   return slots
 }
 
-// Helper to check if a slot is within working hours
 export function isWithinWorkingHours(
   slot: Date,
   schedule: CalendlySchedule
@@ -104,7 +93,6 @@ export function isWithinWorkingHours(
   })
 }
 
-// Helper to check if a slot conflicts with busy times
 export function hasNoConflicts(
   slot: Date,
   duration: number,
