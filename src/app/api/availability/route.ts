@@ -1,7 +1,7 @@
 // src/app/api/availability/route.ts
 import { NextResponse } from 'next/server'
 import type { CommonSlot, AvailabilityRequest } from '@/lib/types'
-import { formatSlotDate, formatSlotTime, parseCalendlyUrl } from '@/lib/calendly'
+import { formatSlotDate } from '@/lib/calendly'
 
 export async function POST(request: Request) {
   try {
@@ -17,6 +17,8 @@ export async function POST(request: Request) {
     // Fetch availability data for each URL
     const availabilityPromises = eventUrls.map(async (url) => {
       try {
+        // Validate and process URL
+        const originalUrl = new URL(url)
         // Use a simple HEAD request first to validate the URL
         const checkResponse = await fetch(url, { method: 'HEAD' })
         if (!checkResponse.ok) {
@@ -24,7 +26,6 @@ export async function POST(request: Request) {
         }
 
         // Construct the proper URL for availability data
-        const originalUrl = new URL(url)
         const availabilityUrl = new URL(`${originalUrl.origin}${originalUrl.pathname}/available_spots`)
         availabilityUrl.searchParams.set('month', originalUrl.searchParams.get('month') || new Date().toISOString().split('T')[0].substring(0, 7))
 
