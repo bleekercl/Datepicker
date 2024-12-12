@@ -1,26 +1,19 @@
 // src/lib/calendly.ts
 import { CommonSlot, AvailabilityResponse, CalendlyEventInfo } from './types'
-import { parseISO, format, differenceInDays } from 'date-fns'
+import { parseISO, format } from 'date-fns'
 
 export function parseCalendlyUrl(url: string): CalendlyEventInfo {
-  try {
-    // Handle different URL formats
-    const cleanUrl = url.trim().toLowerCase()
-    
-    // Match URLs like: https://calendly.com/jeroen-stolk/20min-adviesgesprek
-    const urlPattern = /^(?:https?:\/\/)?(?:www\.)?calendly\.com\/([^\/]+)\/([^\/\?]+)/
-    const match = cleanUrl.match(urlPattern)
-    
-    if (!match) {
-      throw new Error('Invalid Calendly URL format')
-    }
-    
-    return {
-      username: match[1],
-      eventSlug: match[2]
-    }
-  } catch (error) {
-    throw new Error(`Invalid Calendly URL: ${url}`)
+  const cleanUrl = url.trim().toLowerCase()
+  const urlPattern = /^(?:https?:\/\/)?(?:www\.)?calendly\.com\/([^\/]+)\/([^\/\?]+)/
+  const match = cleanUrl.match(urlPattern)
+  
+  if (!match) {
+    throw new Error('Invalid Calendly URL format')
+  }
+  
+  return {
+    username: match[1],
+    eventSlug: match[2]
   }
 }
 
@@ -34,26 +27,6 @@ export async function findCommonAvailability(
     if (!eventUrls.length) {
       throw new Error('No event URLs provided')
     }
-
-    // Validate date range
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    const dayDiff = differenceInDays(end, start)
-
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      throw new Error('Invalid date format')
-    }
-
-    if (dayDiff > 7) {
-      throw new Error('Date range cannot exceed 7 days')
-    }
-
-    if (dayDiff < 0) {
-      throw new Error('End date must be after start date')
-    }
-
-    // Parse all URLs first to validate them
-    const eventInfos = eventUrls.map(url => parseCalendlyUrl(url))
 
     const response = await fetch('/api/availability', {
       method: 'POST',
@@ -74,11 +47,8 @@ export async function findCommonAvailability(
 
     const data = await response.json() as AvailabilityResponse
     return data.slots
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to find common availability: ${error.message}`)
-    }
-    throw new Error('An unexpected error occurred')
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : 'An unexpected error occurred')
   }
 }
 
