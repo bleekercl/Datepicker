@@ -1,8 +1,8 @@
 // src/lib/calendly.ts
-import { CommonSlot, AvailabilityResponse, CalendlyUser } from './types'
+import { CommonSlot, AvailabilityResponse } from './types' // Removed CalendlyUser
 import { parseISO, format } from 'date-fns'
 
-const CALENDLY_API_BASE = 'https://api.calendly.com'
+// Removed unused CALENDLY_API_BASE
 
 export function extractCalendlyUsername(url: string): string {
   const urlObj = new URL(url)
