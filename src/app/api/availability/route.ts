@@ -5,40 +5,78 @@ import type {
   CalendlyTimeSlot,
   CalendlyAvailabilityResponse,
   CalendlyError,
-  AvailabilityResponse
+  AvailabilityResponse,
+  CalendlyUser,
+  CalendlyEventType
 } from "@/lib/types"
-import { formatSlotTime, formatSlotDate } from "@/lib/calendly"
+import { formatSlotTime, formatSlotDate, extractUsername, extractEventSlug } from "@/lib/calendly"
 import { parseISO, addDays } from "date-fns"
 
-const CALENDLY_API_BASE = "https://api.calendly.com/scheduling_links"
+const CALENDLY_API_TOKEN = process.env.CALENDLY_API_TOKEN
+const CALENDLY_API_BASE = "https://api.calendly.com"
 
 interface ErrorResponse {
   error: string
   status?: number
 }
 
-async function getEventTypeUuid(eventUrl: string): Promise<string> {
+async function getEventTypeUuid(url: string): Promise<string> {
+  if (!CALENDLY_API_TOKEN) {
+    throw new Error("Calendly API token not configured")
+  }
+
   try {
-    const response = await fetch(eventUrl)
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch event type for URL: ${eventUrl}`)
+    const username = extractUsername(url)
+    const eventSlug = extractEventSlug(url)
+
+    // Get user's URI
+    const userResponse = await fetch(
+      `${CALENDLY_API_BASE}/users/${username}`,
+      {
+        headers: {
+          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    if (!userResponse.ok) {
+      throw new Error("Failed to fetch user information")
     }
-    
-    const finalUrl = new URL(response.url)
-    const urlParts = finalUrl.pathname.split("/").filter(Boolean)
-    const eventUuid = urlParts[urlParts.length - 1]
-    
-    if (!eventUuid) {
-      throw new Error("Could not extract event UUID from URL")
+
+    const userData = await userResponse.json() as CalendlyUser
+    const userUri = userData.resource.uri
+
+    // Get event type UUID
+    const eventTypesResponse = await fetch(
+      `${CALENDLY_API_BASE}/event_types?user=${encodeURIComponent(userUri)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    if (!eventTypesResponse.ok) {
+      throw new Error("Failed to fetch event types")
     }
-    
-    return eventUuid
+
+    const eventTypesData = await eventTypesResponse.json()
+    const eventType = eventTypesData.collection.find(
+      (et: CalendlyEventType) => et.slug === eventSlug
+    )
+
+    if (!eventType) {
+      throw new Error(`Event type not found: ${eventSlug}`)
+    }
+
+    return eventType.uuid
   } catch (error) {
     const message = error instanceof Error 
       ? error.message 
       : "Invalid or inaccessible Calendly URL"
-    throw new Error(`${message}: ${eventUrl}`)
+    throw new Error(`${message}: ${url}`)
   }
 }
 
@@ -48,16 +86,21 @@ async function fetchAvailability(
   endTime: string
 ): Promise<CalendlyTimeSlot[]> {
   try {
-    const eventUuid = await getEventTypeUuid(url)
+    if (!CALENDLY_API_TOKEN) {
+      throw new Error("Calendly API token not configured")
+    }
+
+    const eventTypeUuid = await getEventTypeUuid(url)
     const params = new URLSearchParams({
       start_time: startTime,
       end_time: endTime
     })
 
     const availabilityResponse = await fetch(
-      `${CALENDLY_API_BASE}/${eventUuid}/available_times?${params.toString()}`,
+      `${CALENDLY_API_BASE}/event_types/${eventTypeUuid}/available_times?${params}`,
       {
         headers: {
+          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
           "Content-Type": "application/json"
         }
       }
@@ -73,10 +116,9 @@ async function fetchAvailability(
     const data = await availabilityResponse.json() as CalendlyAvailabilityResponse
     return data.collection
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Error processing URL ${url}: ${error.message}`)
-    }
-    throw new Error(`Unknown error processing URL ${url}`)
+    throw new Error(
+      `Error processing URL ${url}: ${error instanceof Error ? error.message : "Unknown error"}`
+    )
   }
 }
 
@@ -114,6 +156,13 @@ export async function POST(
   request: Request
 ): Promise<NextResponse<AvailabilityResponse | ErrorResponse>> {
   try {
+    if (!CALENDLY_API_TOKEN) {
+      return NextResponse.json(
+        { error: "Calendly API not configured" },
+        { status: 500 }
+      )
+    }
+
     const { eventUrls, startDate, endDate }: AvailabilityRequest = await request.json()
 
     if (!eventUrls?.length) {

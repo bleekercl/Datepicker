@@ -1,5 +1,4 @@
-// src/lib/calendly.ts
-import { CommonSlot, AvailabilityResponse } from "./types"
+import type { CommonSlot, AvailabilityResponse } from "./types"
 import { parseISO, format } from "date-fns"
 
 export async function findCommonAvailability(
@@ -30,12 +29,41 @@ export function formatSlotDate(date: string): string {
   return format(parseISO(date), "EEE, MMM d, yyyy")
 }
 
-export function extractEventUuid(url: string): string {
+export function extractUsername(url: string): string {
   try {
-    const urlParts = new URL(url).pathname.split("/")
-    // The event type should be the last part of the URL
-    return urlParts[urlParts.length - 1]
+    const urlPath = new URL(url).pathname.split("/")
+    const username = urlPath[1]
+    
+    if (!username) {
+      throw new Error("Invalid URL format: missing username")
+    }
+    
+    return username
   } catch (error) {
-    throw new Error(`Invalid Calendly URL: ${url}`)
+    throw new Error(
+      error instanceof Error 
+        ? `Invalid Calendly URL: ${error.message}`
+        : "Invalid Calendly URL"
+    )
+  }
+}
+
+export function extractEventSlug(url: string): string {
+  try {
+    const urlPath = new URL(url).pathname.split("/")
+    const eventSlug = urlPath[2]
+    
+    if (!eventSlug) {
+      throw new Error("Invalid URL format: missing event slug")
+    }
+    
+    // Remove query parameters if present
+    return eventSlug.split("?")[0]
+  } catch (error) {
+    throw new Error(
+      error instanceof Error 
+        ? `Invalid Calendly URL: ${error.message}`
+        : "Invalid Calendly URL"
+    )
   }
 }
