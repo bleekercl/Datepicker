@@ -8,7 +8,7 @@ import type {
 import { formatSlotTime, formatSlotDate } from "@/lib/calendly"
 import { parseISO, addDays } from "date-fns"
 
-const CALENDLY_API_BASE = "https://api.calendly.com/scheduling_links"
+const CALENDLY_API = "https://api.calendly.com"
 
 async function fetchPublicAvailability(
   url: string,
@@ -16,27 +16,40 @@ async function fetchPublicAvailability(
   endTime: string
 ): Promise<CalendlyTimeSlot[]> {
   try {
-    const eventPath = new URL(url).pathname
-    const apiUrl = `${CALENDLY_API_BASE}${eventPath}/available_times`
-    
+    // Parse the URL and get just the pathname without query parameters
+    const parsedUrl = new URL(url)
+    const pathname = parsedUrl.pathname.replace(/\/$/, "") // Remove trailing slash if present
+
+    // Make the availability request
     const params = new URLSearchParams({
       start_time: startTime,
       end_time: endTime
     })
 
-    const response = await fetch(`${apiUrl}?${params}`, {
-      headers: {
-        "Content-Type": "application/json"
+    const response = await fetch(
+      `${CALENDLY_API}/scheduling_links${pathname}/available_times?${params}`,
+      {
+        headers: {
+          "Content-Type": "application/json"
+        }
       }
-    })
+    )
 
+    // If the request fails, get the error details
     if (!response.ok) {
-      throw new Error("Failed to fetch availability")
+      const errorText = await response.text()
+      console.error("Calendly API Error:", {
+        status: response.status,
+        url: pathname,
+        error: errorText
+      })
+      throw new Error(`Failed to fetch availability: ${response.status}`)
     }
 
     const data = await response.json() as CalendlyPublicAvailabilityResponse
     return data.collection
   } catch (error) {
+    console.error("Availability Error:", error)
     throw new Error(
       `Error processing URL ${url}: ${error instanceof Error ? error.message : "Unknown error"}`
     )
@@ -52,7 +65,7 @@ function findCommonAvailableSlots(
     const formattedSlots = availability
       .filter((slot) => 
         slot.status === "available" && 
-        slot.invitees_remaining > 0
+        (slot.invitees_remaining > 0 || slot.invitees_remaining === undefined)
       )
       .map((slot) => ({
         date: formatSlotDate(slot.start_time),
@@ -93,8 +106,8 @@ export async function POST(
     const invalidUrls = eventUrls.filter((url) => {
       try {
         const parsed = new URL(url)
-        return !parsed.hostname.includes("calendly.com") || 
-               parsed.pathname.split("/").length < 3
+        const pathParts = parsed.pathname.split('/').filter(Boolean)
+        return !parsed.hostname.includes("calendly.com") || pathParts.length < 2
       } catch {
         return true
       }
@@ -110,6 +123,7 @@ export async function POST(
     const startTime = parseISO(startDate).toISOString()
     const endTime = addDays(parseISO(endDate), 1).toISOString()
 
+    // Process each URL in parallel
     const availabilityPromises = eventUrls.map((url) => 
       fetchPublicAvailability(url, startTime, endTime)
     )
@@ -123,6 +137,7 @@ export async function POST(
     })
 
   } catch (error) {
+    console.error("API Error:", error)
     const message = error instanceof Error ? error.message : "An unexpected error occurred"
     return NextResponse.json({ error: message }, { status: 500 })
   }
