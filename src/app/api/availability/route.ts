@@ -1,17 +1,118 @@
-// src/app/api/availability/route.ts
 import { NextResponse } from "next/server"
 import type { 
   AvailabilityRequest, 
   CommonSlot, 
   CalendlyTimeSlot,
-  CalendlyAvailabilityResponse 
+  CalendlyAvailabilityResponse,
+  CalendlyError,
+  AvailabilityResponse
 } from "@/lib/types"
-import { formatSlotTime, formatSlotDate, extractEventUuid } from "@/lib/calendly"
+import { formatSlotTime, formatSlotDate } from "@/lib/calendly"
 import { parseISO, addDays } from "date-fns"
 
-const CALENDLY_API_BASE = 'https://api.calendly.com/event_types'
+const CALENDLY_API_BASE = "https://api.calendly.com/scheduling_links"
 
-export async function POST(request: Request) {
+interface ErrorResponse {
+  error: string
+  status?: number
+}
+
+async function getEventTypeUuid(eventUrl: string): Promise<string> {
+  try {
+    const response = await fetch(eventUrl)
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch event type for URL: ${eventUrl}`)
+    }
+    
+    const finalUrl = new URL(response.url)
+    const urlParts = finalUrl.pathname.split("/").filter(Boolean)
+    const eventUuid = urlParts[urlParts.length - 1]
+    
+    if (!eventUuid) {
+      throw new Error("Could not extract event UUID from URL")
+    }
+    
+    return eventUuid
+  } catch (error) {
+    const message = error instanceof Error 
+      ? error.message 
+      : "Invalid or inaccessible Calendly URL"
+    throw new Error(`${message}: ${eventUrl}`)
+  }
+}
+
+async function fetchAvailability(
+  url: string,
+  startTime: string,
+  endTime: string
+): Promise<CalendlyTimeSlot[]> {
+  try {
+    const eventUuid = await getEventTypeUuid(url)
+    const params = new URLSearchParams({
+      start_time: startTime,
+      end_time: endTime
+    })
+
+    const availabilityResponse = await fetch(
+      `${CALENDLY_API_BASE}/${eventUuid}/available_times?${params.toString()}`,
+      {
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }
+    )
+
+    if (!availabilityResponse.ok) {
+      const errorData = await availabilityResponse.json() as CalendlyError
+      throw new Error(
+        `Failed to fetch availability: ${errorData.message || availabilityResponse.statusText}`
+      )
+    }
+
+    const data = await availabilityResponse.json() as CalendlyAvailabilityResponse
+    return data.collection
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Error processing URL ${url}: ${error.message}`)
+    }
+    throw new Error(`Unknown error processing URL ${url}`)
+  }
+}
+
+function findCommonAvailableSlots(
+  allAvailabilities: CalendlyTimeSlot[][]
+): CommonSlot[] {
+  let commonSlots: CommonSlot[] = []
+
+  allAvailabilities.forEach((availability: CalendlyTimeSlot[], index: number) => {
+    const formattedSlots = availability
+      .filter((slot) => slot.spots_available > 0)
+      .map((slot) => ({
+        date: formatSlotDate(slot.start_time),
+        time: formatSlotTime(slot.start_time),
+        duration: "30min"
+      }))
+
+    if (index === 0) {
+      commonSlots = formattedSlots
+      return
+    }
+
+    commonSlots = commonSlots.filter((commonSlot) => 
+      formattedSlots.find((formattedSlot) => 
+        formattedSlot.date === commonSlot.date && 
+        formattedSlot.time === commonSlot.time
+      )
+    )
+  })
+
+  return commonSlots
+}
+
+export async function POST(
+  request: Request
+): Promise<NextResponse<AvailabilityResponse | ErrorResponse>> {
   try {
     const { eventUrls, startDate, endDate }: AvailabilityRequest = await request.json()
 
@@ -22,65 +123,15 @@ export async function POST(request: Request) {
       )
     }
 
-    // Process each event URL
-    const availabilityPromises = eventUrls.map(async (url) => {
-      try {
-        const eventUuid = extractEventUuid(url)
-        const startTime = parseISO(startDate).toISOString()
-        const endTime = addDays(parseISO(endDate), 1).toISOString()
+    const startTime = parseISO(startDate).toISOString()
+    const endTime = addDays(parseISO(endDate), 1).toISOString()
 
-        const availabilityResponse = await fetch(
-          `${CALENDLY_API_BASE}/${eventUuid}/available_times?` +
-          new URLSearchParams({
-            start_time: startTime,
-            end_time: endTime
-          }).toString()
-        )
+    const availabilityPromises = eventUrls.map((url) => 
+      fetchAvailability(url, startTime, endTime)
+    )
 
-        if (!availabilityResponse.ok) {
-          const errorData = await availabilityResponse.json()
-          throw new Error(
-            `Failed to fetch availability for ${url}: ${errorData.message || availabilityResponse.statusText}`
-          )
-        }
-
-        const data = await availabilityResponse.json() as CalendlyAvailabilityResponse
-        return data.collection
-      } catch (error) {
-        console.error(`Error processing URL ${url}:`, error)
-        throw error
-      }
-    })
-
-    // Process all availabilities
     const allAvailabilities = await Promise.all(availabilityPromises)
-    let commonSlots: CommonSlot[] = []
-
-    // Process each availability set
-    allAvailabilities.forEach((availability: CalendlyTimeSlot[], index: number) => {
-      // Convert Calendly time slots to our common format
-      const formattedSlots = availability
-        .filter(slot => slot.spots_available > 0)
-        .map(slot => ({
-          date: formatSlotDate(slot.start_time),
-          time: formatSlotTime(slot.start_time),
-          duration: "30min" // You might want to make this dynamic based on event type
-        }))
-
-      // If this is the first set, use it as the base
-      if (index === 0) {
-        commonSlots = formattedSlots
-        return
-      }
-
-      // Filter common slots based on matching dates and times
-      commonSlots = commonSlots.filter(commonSlot => 
-        formattedSlots.find(formattedSlot => 
-          formattedSlot.date === commonSlot.date && 
-          formattedSlot.time === commonSlot.time
-        )
-      )
-    })
+    const commonSlots = findCommonAvailableSlots(allAvailabilities)
 
     return NextResponse.json({ 
       slots: commonSlots,
@@ -88,7 +139,6 @@ export async function POST(request: Request) {
     })
 
   } catch (error) {
-    console.error('Availability processing error:', error)
     const message = error instanceof Error ? error.message : "An unexpected error occurred"
     return NextResponse.json({ error: message }, { status: 500 })
   }
