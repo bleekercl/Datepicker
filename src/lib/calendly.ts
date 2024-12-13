@@ -9,7 +9,7 @@ export async function findCommonAvailability(
   const response = await fetch("/api/availability", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventUrls, startDate, endDate }),
+    body: JSON.stringify({ eventUrls, startDate, endDate })
   })
 
   const data = await response.json()
@@ -29,41 +29,11 @@ export function formatSlotDate(date: string): string {
   return format(parseISO(date), "EEE, MMM d, yyyy")
 }
 
-export function extractUsername(url: string): string {
+export function validateCalendlyUrl(url: string): boolean {
   try {
-    const urlPath = new URL(url).pathname.split("/")
-    const username = urlPath[1]
-    
-    if (!username) {
-      throw new Error("Invalid URL format: missing username")
-    }
-    
-    return username
-  } catch (error) {
-    throw new Error(
-      error instanceof Error 
-        ? `Invalid Calendly URL: ${error.message}`
-        : "Invalid Calendly URL"
-    )
-  }
-}
-
-export function extractEventSlug(url: string): string {
-  try {
-    const urlPath = new URL(url).pathname.split("/")
-    const eventSlug = urlPath[2]
-    
-    if (!eventSlug) {
-      throw new Error("Invalid URL format: missing event slug")
-    }
-    
-    // Remove query parameters if present
-    return eventSlug.split("?")[0]
-  } catch (error) {
-    throw new Error(
-      error instanceof Error 
-        ? `Invalid Calendly URL: ${error.message}`
-        : "Invalid Calendly URL"
-    )
+    const parsed = new URL(url)
+    return parsed.hostname.includes("calendly.com") && parsed.pathname.split("/").length >= 3
+  } catch {
+    return false
   }
 }
