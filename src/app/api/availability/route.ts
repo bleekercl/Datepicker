@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { 
   CommonSlot, 
   availabilityRequestSchema
@@ -7,10 +8,18 @@ import {
 
 // Custom error types for better error handling
 class CalendlyError extends Error {
-  constructor(message: string, public statusCode: number = 500) {
+  constructor(message: string, public statusCode = 500) {
     super(message);
     this.name = 'CalendlyError';
   }
+}
+
+// Interface for the expected response structure
+interface GPTResponse {
+  slots?: Array<{
+    date?: string;
+    time?: string;
+  }>;
 }
 
 // Validate Calendly URL format
@@ -30,18 +39,23 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
   }
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-1106-preview",
-      messages: [{
+    const messages: Array<ChatCompletionMessageParam> = [
+      {
         role: "system",
         content: "You are a helpful assistant that extracts availability information from Calendly URLs. You must return ONLY valid JSON in the exact format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}. For each URL:\n1. Check the calendar month view\n2. Click through each date that shows availability (blue dots or highlights)\n3. For each date, collect all available time slots shown on the right side\n4. If you encounter any errors, still return valid JSON with an empty slots array: {\"slots\": []}"
-      }, {
+      },
+      {
         role: "user",
         content: `Extract ALL available dates and time slots from the following Calendly URL: ${url}. Return ONLY valid JSON, no explanations or error messages. Format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}. If you encounter any issues, return {\"slots\": []}`
-      }],
+      }
+    ];
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-1106-preview",
+      messages,
       response_format: { type: "json_object" },
-      temperature: 0.5, // Add temperature for more consistent responses
-      max_tokens: 2000 // Limit token usage
+      temperature: 0.5,
+      max_tokens: 2000
     });
 
     const result = response.choices[0].message.content;
@@ -52,7 +66,7 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
     console.log("Raw GPT response for URL:", url, "Response:", result);
 
     try {
-      const parsed = JSON.parse(result);
+      const parsed = JSON.parse(result) as GPTResponse;
       
       // Validate response structure
       if (!parsed || typeof parsed !== 'object') {
@@ -64,13 +78,15 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
         return [];
       }
 
-      // Validate each slot's format
-      const validSlots = parsed.slots.filter((slot: any) => {
-        return slot && 
-               typeof slot.date === 'string' && 
-               typeof slot.time === 'string' &&
-               /^\d{4}-\d{2}-\d{2}$/.test(slot.date) &&
-               /^\d{2}:\d{2}$/.test(slot.time);
+      const validSlots = parsed.slots.filter((slot): slot is CommonSlot => {
+        return Boolean(
+          slot?.date != null && 
+          slot?.time != null &&
+          typeof slot.date === 'string' && 
+          typeof slot.time === 'string' &&
+          /^\d{4}-\d{2}-\d{2}$/.test(slot.date) &&
+          /^\d{2}:\d{2}$/.test(slot.time)
+        );
       });
 
       return validSlots;
@@ -86,7 +102,6 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
       throw error;
     }
     
-    // Handle OpenAI specific errors
     if (error instanceof OpenAI.APIError) {
       if (error.status === 429) {
         throw new CalendlyError("Rate limit exceeded. Please try again later.", 429);
@@ -98,52 +113,32 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
   }
 }
 
-// Helper function to create a unique key for a slot
-function createSlotKey(slot: CommonSlot): string {
-  return `${slot.date}-${slot.time}`;
-}
-
 // Find slots that are common across all calendars
-function findCommonSlots(allAvailabilities: CommonSlot[][]): CommonSlot[] {
+function findCommonSlots(allAvailabilities: Array<CommonSlot[]>): CommonSlot[] {
   if (allAvailabilities.length === 0) return [];
   if (allAvailabilities.length === 1) return allAvailabilities[0];
 
-  // Create a map to count occurrences of each slot
-  const slotCounts = new Map<string, { count: number; slot: CommonSlot }>();
+  let commonSlots = allAvailabilities[0];
 
-  // Count occurrences of each unique slot
-  allAvailabilities.forEach(calendar => {
-    // Create a Set of unique slots for this calendar to avoid double-counting
-    const uniqueCalendarSlots = new Set(calendar.map(createSlotKey));
-    
-    uniqueCalendarSlots.forEach(slotKey => {
-      const existing = slotCounts.get(slotKey);
-      if (existing) {
-        existing.count++;
-      } else {
-        // Find the original slot object for this key
-        const slot = calendar.find(s => createSlotKey(s) === slotKey)!;
-        slotCounts.set(slotKey, { count: 1, slot });
-      }
-    });
+  for (let i = 1; i < allAvailabilities.length; i++) {
+    commonSlots = commonSlots.filter(slot1 => 
+      allAvailabilities[i].some(slot2 => 
+        slot1.date === slot2.date && slot1.time === slot2.time
+      )
+    );
+
+    if (commonSlots.length === 0) {
+      return [];
+    }
+  }
+
+  return commonSlots.sort((a, b) => {
+    const dateCompare = a.date.localeCompare(b.date);
+    return dateCompare !== 0 ? dateCompare : a.time.localeCompare(b.time);
   });
-
-  // Filter slots that appear in all calendars and sort them
-  const commonSlots = Array.from(slotCounts.values())
-    .filter(({ count }) => count === allAvailabilities.length)
-    .map(({ slot }) => slot)
-    .sort((a, b) => {
-      // Sort by date first, then by time
-      const dateCompare = a.date.localeCompare(b.date);
-      if (dateCompare !== 0) return dateCompare;
-      return a.time.localeCompare(b.time);
-    });
-
-  return commonSlots;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  // Check API key first
   if (!process.env.OPENAI_API_KEY) {
     console.error("OpenAI API key not configured");
     return NextResponse.json({ 
@@ -169,7 +164,6 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const { eventUrls } = parseResult.data;
 
-    // Validate maximum number of URLs
     if (eventUrls.length > 5) {
       return NextResponse.json({
         error: "Too many URLs",
@@ -177,7 +171,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Validate all URLs first
     const invalidUrls = eventUrls.filter(url => !isValidCalendlyUrl(url));
     if (invalidUrls.length > 0) {
       return NextResponse.json({
@@ -189,11 +182,8 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     const availabilityPromises = eventUrls.map(url => fetchAvailabilityFromGPT(openai, url));
     const allAvailabilities = await Promise.all(availabilityPromises);
-
-    // Find common slots instead of just flattening
     const commonSlots = findCommonSlots(allAvailabilities);
 
-    // Add request metadata
     return NextResponse.json({
       slots: commonSlots,
       metadata: {
