@@ -1,6 +1,4 @@
-"use client"
-
-import { useState } from "react"
+import { type ChangeEvent, useState } from "react"
 import { Plus, X, Calendar, Clock, Loader2, AlertCircle, Link } from "lucide-react"
 import { findCommonAvailability } from "@/lib/calendly"
 import type { CommonSlot } from "@/lib/types"
@@ -41,11 +39,36 @@ export default function CalendlyDashboard() {
     return urls.every(url => {
       try {
         const parsed = new URL(url)
-        return parsed.hostname.includes('calendly.com') && parsed.pathname.split('/').length >= 3
+        return parsed.hostname.includes("calendly.com") && parsed.pathname.split("/").length >= 3
       } catch {
         return false
       }
     })
+  }
+
+  const handleDateChange = (
+    field: "startDate" | "endDate",
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = event.target.value
+    setDateRange((prev) => {
+      if (field === "startDate") {
+        const newEndDate = new Date(value) > new Date(prev.endDate) 
+          ? value 
+          : prev.endDate
+
+        return {
+          startDate: value,
+          endDate: newEndDate
+        }
+      }
+      
+      return {
+        ...prev,
+        [field]: value
+      }
+    })
+    setError(null)
   }
 
   const handleSubmit = async () => {
@@ -79,6 +102,11 @@ export default function CalendlyDashboard() {
       setIsLoading(false)
     }
   }
+
+  const today = new Date().toISOString().split("T")[0]
+  const maxEndDate = addDays(new Date(dateRange.startDate), MAX_DAYS)
+    .toISOString()
+    .split("T")[0]
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6">
@@ -118,7 +146,8 @@ export default function CalendlyDashboard() {
                   value={url}
                   onChange={(e) => updateUrl(index, e.target.value)}
                   placeholder="Enter complete Calendly event URL"
-                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 
+                    placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500"
                 />
                 {eventUrls.length > 1 && (
                   <button
@@ -137,44 +166,32 @@ export default function CalendlyDashboard() {
           <div className="mt-4 space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="start-date" className="mb-1 block text-sm font-medium text-gray-700">
                   Start Date
                 </label>
                 <input
+                  id="start-date"
                   type="date"
                   value={dateRange.startDate}
-                  min={new Date().toISOString().split("T")[0]}
-                  onChange={(e) => {
-                    setDateRange((prev) => ({
-                      ...prev,
-                      startDate: e.target.value,
-                      // Reset end date if it's before new start date
-                      endDate: new Date(e.target.value) > new Date(prev.endDate) 
-                        ? e.target.value 
-                        : prev.endDate
-                    }))
-                    setError(null)
-                  }}
-                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                  min={today}
+                  onChange={(e) => handleDateChange("startDate", e)}
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 
+                    focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="end-date" className="mb-1 block text-sm font-medium text-gray-700">
                   End Date
                 </label>
                 <input
+                  id="end-date"
                   type="date"
                   value={dateRange.endDate}
                   min={dateRange.startDate}
-                  max={addDays(new Date(dateRange.startDate), MAX_DAYS).toISOString().split("T")[0]}
-                  onChange={(e) => {
-                    setDateRange((prev) => ({
-                      ...prev,
-                      endDate: e.target.value
-                    }))
-                    setError(null)
-                  }}
-                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                  max={maxEndDate}
+                  onChange={(e) => handleDateChange("endDate", e)}
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 
+                    focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -182,7 +199,8 @@ export default function CalendlyDashboard() {
             <button
               onClick={addUrlField}
               type="button"
-              className="flex w-full items-center justify-center rounded-lg border border-gray-200 bg-white p-2 text-gray-600 hover:bg-gray-50"
+              className="flex w-full items-center justify-center rounded-lg border 
+                border-gray-200 bg-white p-2 text-gray-600 hover:bg-gray-50"
             >
               <Plus className="mr-2 h-4 w-4" />
               Add Another URL
@@ -192,7 +210,8 @@ export default function CalendlyDashboard() {
               onClick={handleSubmit}
               disabled={isLoading || eventUrls.some((u) => !u.trim())}
               type="button"
-              className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="flex w-full items-center justify-center rounded-lg bg-blue-600 
+                p-2 font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {isLoading ? (
                 <>
