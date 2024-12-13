@@ -5,17 +5,7 @@ import {
   availabilityRequestSchema
 } from "@/lib/types";
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error(
-    "OPENAI_API_KEY is not set. Please add it to your environment variables."
-  );
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-async function fetchAvailabilityFromGPT(url: string): Promise<CommonSlot[]> {
+async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<CommonSlot[]> {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4",
@@ -32,7 +22,6 @@ async function fetchAvailabilityFromGPT(url: string): Promise<CommonSlot[]> {
     const result = response.choices[0].message.content;
     if (!result) throw new Error("No response from OpenAI");
 
-    // Safely parse the JSON response
     try {
       const parsed = JSON.parse(result);
       return parsed.slots || [];
@@ -47,10 +36,20 @@ async function fetchAvailabilityFromGPT(url: string): Promise<CommonSlot[]> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ 
+      error: "Server configuration error",
+      message: "OpenAI API key is not configured"
+    }, { status: 500 });
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+  });
+
   try {
     const body = await request.json();
     
-    // Validate request body
     const parseResult = availabilityRequestSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json({ 
@@ -60,7 +59,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const { eventUrls } = parseResult.data;
-    const availabilityPromises = eventUrls.map(fetchAvailabilityFromGPT);
+    const availabilityPromises = eventUrls.map(url => fetchAvailabilityFromGPT(openai, url));
     const allAvailabilities = await Promise.all(availabilityPromises);
 
     return NextResponse.json({
