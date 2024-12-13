@@ -16,10 +16,16 @@ export interface AvailabilityResponse {
   error?: string
 }
 
+// Define specific types for API errors
+export interface CalendlyAPIErrorDetail {
+  parameter: string
+  message: string
+}
+
 export interface CalendlyAPIError {
   type: string
   message: string
-  details?: Record<string, any>
+  details?: Record<string, CalendlyAPIErrorDetail>
 }
 
 export interface CalendlyAPIResponse<T> {

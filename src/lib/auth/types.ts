@@ -13,8 +13,14 @@ export interface TokenResponse {
     }
   }
   
+  // Define specific types for error details
+  export interface CalendlyErrorDetail {
+    parameter: string
+    message: string
+  }
+  
   export interface CalendlyErrorResponse {
     type: string
     message: string
-    details?: Record<string, any>
+    details?: Record<string, CalendlyErrorDetail>
   }
