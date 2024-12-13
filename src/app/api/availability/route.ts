@@ -12,8 +12,8 @@ import type {
 import { formatSlotTime, formatSlotDate, extractUsername, extractEventSlug } from "@/lib/calendly"
 import { parseISO, addDays } from "date-fns"
 
-const CALENDLY_API_TOKEN = process.env.CALENDLY_API_TOKEN
 const CALENDLY_API_BASE = "https://api.calendly.com"
+const ACCESS_TOKEN = process.env.CALENDLY_PERSONAL_ACCESS_TOKEN
 
 interface ErrorResponse {
   error: string
@@ -21,8 +21,8 @@ interface ErrorResponse {
 }
 
 async function getEventTypeUuid(url: string): Promise<string> {
-  if (!CALENDLY_API_TOKEN) {
-    throw new Error("Calendly API token not configured")
+  if (!ACCESS_TOKEN) {
+    throw new Error("Calendly Personal Access Token not configured")
   }
 
   try {
@@ -34,13 +34,15 @@ async function getEventTypeUuid(url: string): Promise<string> {
       `${CALENDLY_API_BASE}/users/${username}`,
       {
         headers: {
-          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
+          Authorization: `Bearer ${ACCESS_TOKEN}`,
           "Content-Type": "application/json"
         }
       }
     )
 
     if (!userResponse.ok) {
+      const errorText = await userResponse.text()
+      console.error("User fetch failed:", userResponse.status, errorText)
       throw new Error("Failed to fetch user information")
     }
 
@@ -52,13 +54,15 @@ async function getEventTypeUuid(url: string): Promise<string> {
       `${CALENDLY_API_BASE}/event_types?user=${encodeURIComponent(userUri)}`,
       {
         headers: {
-          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
+          Authorization: `Bearer ${ACCESS_TOKEN}`,
           "Content-Type": "application/json"
         }
       }
     )
 
     if (!eventTypesResponse.ok) {
+      const errorText = await eventTypesResponse.text()
+      console.error("Event types fetch failed:", eventTypesResponse.status, errorText)
       throw new Error("Failed to fetch event types")
     }
 
@@ -86,8 +90,8 @@ async function fetchAvailability(
   endTime: string
 ): Promise<CalendlyTimeSlot[]> {
   try {
-    if (!CALENDLY_API_TOKEN) {
-      throw new Error("Calendly API token not configured")
+    if (!ACCESS_TOKEN) {
+      throw new Error("Calendly Personal Access Token not configured")
     }
 
     const eventTypeUuid = await getEventTypeUuid(url)
@@ -100,7 +104,7 @@ async function fetchAvailability(
       `${CALENDLY_API_BASE}/event_types/${eventTypeUuid}/available_times?${params}`,
       {
         headers: {
-          Authorization: `Bearer ${CALENDLY_API_TOKEN}`,
+          Authorization: `Bearer ${ACCESS_TOKEN}`,
           "Content-Type": "application/json"
         }
       }
@@ -156,9 +160,9 @@ export async function POST(
   request: Request
 ): Promise<NextResponse<AvailabilityResponse | ErrorResponse>> {
   try {
-    if (!CALENDLY_API_TOKEN) {
+    if (!ACCESS_TOKEN) {
       return NextResponse.json(
-        { error: "Calendly API not configured" },
+        { error: "Calendly Personal Access Token not configured" },
         { status: 500 }
       )
     }
@@ -188,6 +192,7 @@ export async function POST(
     })
 
   } catch (error) {
+    console.error("API Error:", error)
     const message = error instanceof Error ? error.message : "An unexpected error occurred"
     return NextResponse.json({ error: message }, { status: 500 })
   }
