@@ -1,5 +1,5 @@
 // src/lib/calendly.ts
-import { CommonSlot, AvailabilityResponse } from "./types"
+import { CommonSlot, AvailabilityResponse, CalendlyAPIError } from "./types"
 import { parseISO, format } from "date-fns"
 
 export async function findCommonAvailability(
@@ -13,13 +13,17 @@ export async function findCommonAvailability(
     body: JSON.stringify({ eventUrls, startDate, endDate }),
   })
 
+  const data = await response.json()
+
   if (!response.ok) {
-    const errorData = await response.json()
-    throw new Error(errorData.error || "Failed to fetch availability")
+    // Handle OAuth and API-specific errors
+    if (response.status === 401) {
+      throw new Error("Authentication failed. Please check your Calendly settings.")
+    }
+    throw new Error(data.error || "Failed to fetch availability")
   }
 
-  const data = await response.json() as AvailabilityResponse
-  return data.slots
+  return (data as AvailabilityResponse).slots
 }
 
 export function formatSlotTime(date: string): string {
@@ -28,4 +32,13 @@ export function formatSlotTime(date: string): string {
 
 export function formatSlotDate(date: string): string {
   return format(parseISO(date), "yyyy-MM-dd")
+}
+
+export function isCalendlyError(error: unknown): error is CalendlyAPIError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "type" in error &&
+    "message" in error
+  )
 }

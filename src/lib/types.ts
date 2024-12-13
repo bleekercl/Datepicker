@@ -15,3 +15,14 @@ export interface AvailabilityResponse {
   slots: CommonSlot[]
   error?: string
 }
+
+export interface CalendlyAPIError {
+  type: string
+  message: string
+  details?: Record<string, any>
+}
+
+export interface CalendlyAPIResponse<T> {
+  data: T
+  error?: CalendlyAPIError
+}
