@@ -11,10 +11,10 @@ async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<Co
       model: "gpt-4-1106-preview",
       messages: [{
         role: "system",
-        content: "You are a helpful assistant that extracts availability information from Calendly URLs. Return only valid JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}"
+        content: "You are a helpful assistant that extracts availability information from Calendly URLs. For each URL, you must:\n1. Check the calendar month view\n2. Click through each date that shows availability (blue dots or highlights)\n3. For each date, collect all available time slots shown on the right side\n4. Return the data as valid JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}"
       }, {
         role: "user",
-        content: `Extract available dates and time slots from the following Calendly URL: ${url}. Return the data as JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}`
+        content: `Extract ALL available dates and time slots from the following Calendly URL: ${url}. Make sure to:\n1. Look at the calendar month view\n2. Click each date that shows availability (marked with blue dots/highlights)\n3. Note all time slots that appear on the right side for each date\n4. Return ALL found slots as JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}`
       }],
       response_format: { type: "json_object" }
     });
