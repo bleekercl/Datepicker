@@ -1,4 +1,3 @@
-// src/components/CalendlyDashboard.tsx
 "use client"
 
 import { useState } from "react"
@@ -9,6 +8,7 @@ import { addDays } from "date-fns"
 
 const INITIAL_URL = [""]
 const URL_EXAMPLE = "https://calendly.com/username/event-name"
+const MAX_DAYS = 7
 
 export default function CalendlyDashboard() {
   const [eventUrls, setEventUrls] = useState<string[]>(INITIAL_URL)
@@ -17,7 +17,7 @@ export default function CalendlyDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState({
     startDate: new Date().toISOString().split("T")[0],
-    endDate: addDays(new Date(), 7).toISOString().split("T")[0]
+    endDate: addDays(new Date(), MAX_DAYS).toISOString().split("T")[0]
   })
 
   const addUrlField = () => {
@@ -37,14 +37,25 @@ export default function CalendlyDashboard() {
     setError(null)
   }
 
+  const validateUrls = (urls: string[]): boolean => {
+    return urls.every(url => {
+      try {
+        const parsed = new URL(url)
+        return parsed.hostname.includes('calendly.com') && parsed.pathname.split('/').length >= 3
+      } catch {
+        return false
+      }
+    })
+  }
+
   const handleSubmit = async () => {
     if (eventUrls.some((url) => !url.trim())) {
       setError("Please fill in all Calendly event URLs")
       return
     }
 
-    if (!eventUrls.every((url) => url.includes("calendly.com/"))) {
-      setError("Please enter complete Calendly URLs starting with calendly.com/")
+    if (!validateUrls(eventUrls)) {
+      setError("Please enter valid Calendly event URLs (e.g., https://calendly.com/username/event-name)")
       return
     }
 
@@ -85,7 +96,7 @@ export default function CalendlyDashboard() {
                 <ol className="mt-1 list-decimal pl-4">
                   <li>Copy the complete Calendly event URL from each scheduling page</li>
                   <li>Paste each URL below (e.g., {URL_EXAMPLE})</li>
-                  <li>Select a date range (max 7 days)</li>
+                  <li>Select a date range (max {MAX_DAYS} days)</li>
                   <li>Click find to see common available slots</li>
                 </ol>
               </div>
@@ -107,7 +118,7 @@ export default function CalendlyDashboard() {
                   value={url}
                   onChange={(e) => updateUrl(index, e.target.value)}
                   placeholder="Enter complete Calendly event URL"
-                  className="w-full rounded-lg border-gray-200 text-gray-900 placeholder:text-gray-400"
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:ring-blue-500"
                 />
                 {eventUrls.length > 1 && (
                   <button
@@ -136,11 +147,15 @@ export default function CalendlyDashboard() {
                   onChange={(e) => {
                     setDateRange((prev) => ({
                       ...prev,
-                      startDate: e.target.value
+                      startDate: e.target.value,
+                      // Reset end date if it's before new start date
+                      endDate: new Date(e.target.value) > new Date(prev.endDate) 
+                        ? e.target.value 
+                        : prev.endDate
                     }))
                     setError(null)
                   }}
-                  className="w-full rounded-lg border-gray-200 text-gray-900"
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -151,7 +166,7 @@ export default function CalendlyDashboard() {
                   type="date"
                   value={dateRange.endDate}
                   min={dateRange.startDate}
-                  max={addDays(new Date(dateRange.startDate), 7).toISOString().split("T")[0]}
+                  max={addDays(new Date(dateRange.startDate), MAX_DAYS).toISOString().split("T")[0]}
                   onChange={(e) => {
                     setDateRange((prev) => ({
                       ...prev,
@@ -159,7 +174,7 @@ export default function CalendlyDashboard() {
                     }))
                     setError(null)
                   }}
-                  className="w-full rounded-lg border-gray-200 text-gray-900"
+                  className="w-full rounded-lg border border-gray-200 p-2 text-gray-900 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -197,17 +212,17 @@ export default function CalendlyDashboard() {
                 {commonSlots.map((slot, index) => (
                   <div 
                     key={index}
-                    className="flex items-center gap-4 p-3"
+                    className="flex items-center gap-4 p-3 hover:bg-gray-50"
                   >
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-blue-500" />
-                      <span>{slot.date}</span>
+                      <span className="font-medium">{slot.date}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-green-500" />
                       <span>{slot.time}</span>
                     </div>
-                    <span className="text-gray-500">
+                    <span className="text-sm text-gray-500">
                       ({slot.duration})
                     </span>
                   </div>

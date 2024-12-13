@@ -16,19 +16,17 @@ export interface AvailabilityResponse {
   error?: string
 }
 
-// Define specific types for API errors
-export interface CalendlyAPIErrorDetail {
-  parameter: string
-  message: string
+export interface CalendlyTimeSlot {
+  start_time: string
+  end_time: string
+  status: string
+  spots_available: number
 }
 
-export interface CalendlyAPIError {
-  type: string
-  message: string
-  details?: Record<string, CalendlyAPIErrorDetail>
-}
-
-export interface CalendlyAPIResponse<T> {
-  data: T
-  error?: CalendlyAPIError
+export interface CalendlyAvailabilityResponse {
+  collection: CalendlyTimeSlot[]
+  pagination: {
+    count: number
+    next_page?: string
+  }
 }

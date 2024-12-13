@@ -1,5 +1,5 @@
 // src/lib/calendly.ts
-import { CommonSlot, AvailabilityResponse, CalendlyAPIError } from "./types"
+import { CommonSlot, AvailabilityResponse } from "./types"
 import { parseISO, format } from "date-fns"
 
 export async function findCommonAvailability(
@@ -16,10 +16,6 @@ export async function findCommonAvailability(
   const data = await response.json()
 
   if (!response.ok) {
-    // Handle OAuth and API-specific errors
-    if (response.status === 401) {
-      throw new Error("Authentication failed. Please check your Calendly settings.")
-    }
     throw new Error(data.error || "Failed to fetch availability")
   }
 
@@ -31,14 +27,15 @@ export function formatSlotTime(date: string): string {
 }
 
 export function formatSlotDate(date: string): string {
-  return format(parseISO(date), "yyyy-MM-dd")
+  return format(parseISO(date), "EEE, MMM d, yyyy")
 }
 
-export function isCalendlyError(error: unknown): error is CalendlyAPIError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "type" in error &&
-    "message" in error
-  )
+export function extractEventUuid(url: string): string {
+  try {
+    const urlParts = new URL(url).pathname.split("/")
+    // The event type should be the last part of the URL
+    return urlParts[urlParts.length - 1]
+  } catch (error) {
+    throw new Error(`Invalid Calendly URL: ${url}`)
+  }
 }
