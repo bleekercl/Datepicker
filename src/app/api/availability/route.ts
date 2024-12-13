@@ -1,124 +1,71 @@
 import { NextResponse } from "next/server";
-import type {
-  AvailabilityRequest,
-  CommonSlot,
-  CalendlyTimeSlot,
-  CalendlyPublicAvailabilityResponse,
+import OpenAI from "openai";
+import { 
+  CommonSlot, 
+  availabilityRequestSchema, 
+  availabilityResponseSchema 
 } from "@/lib/types";
-import { formatSlotTime, formatSlotDate } from "@/lib/calendly";
-import { parseISO, addDays } from "date-fns";
 
-const CALENDLY_API = "https://api.calendly.com";
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-async function fetchPublicAvailability(
-  url: string,
-  startTime: string,
-  endTime: string
-): Promise<CalendlyTimeSlot[]> {
+async function fetchAvailabilityFromGPT(url: string): Promise<CommonSlot[]> {
   try {
-    const parsedUrl = new URL(url);
-    const pathname = parsedUrl.pathname.replace(/\/$/, "");
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{
+        role: "system",
+        content: "You are a helpful assistant that extracts availability information from Calendly URLs. Return only valid JSON."
+      }, {
+        role: "user",
+        content: `Extract available dates and time slots from the following Calendly URL: ${url}. Return the data as JSON in the format: [{"date": "YYYY-MM-DD", "time": "HH:MM"}]`
+      }],
+      response_format: { type: "json_object" }
+    });
 
-    const params = new URLSearchParams({ start_time: startTime, end_time: endTime });
-    const response = await fetch(
-      `${CALENDLY_API}/scheduling_links${pathname}/available_times?${params}`,
-      {
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    const result = response.choices[0].message.content;
+    if (!result) throw new Error("No response from OpenAI");
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Calendly API Error:", {
-        status: response.status,
-        url: pathname,
-        error: errorText,
-      });
-      throw new Error(`Failed to fetch availability: ${response.status}`);
+    // Safely parse the JSON response
+    try {
+      const parsed = JSON.parse(result);
+      return parsed.slots || [];
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response:", parseError);
+      return [];
     }
-
-    const data = (await response.json()) as CalendlyPublicAvailabilityResponse;
-    return data.collection;
   } catch (error) {
-    console.error("Availability Error:", error);
-    throw new Error(
-      `Error processing URL ${url}: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+    console.error("Error fetching availability from GPT:", error);
+    throw new Error("Failed to fetch availability");
   }
-}
-
-function findCommonAvailableSlots(allAvailabilities: CalendlyTimeSlot[][]): CommonSlot[] {
-  let commonSlots: CommonSlot[] = [];
-
-  allAvailabilities.forEach((availability, index) => {
-    const formattedSlots = availability
-      .filter(
-        (slot) =>
-          slot.status === "available" &&
-          (slot.invitees_remaining > 0 || slot.invitees_remaining === undefined)
-      )
-      .map((slot) => ({
-        date: formatSlotDate(slot.start_time),
-        time: formatSlotTime(slot.start_time),
-        duration: "30min",
-      }));
-
-    if (index === 0) {
-      commonSlots = formattedSlots;
-      return;
-    }
-
-    commonSlots = commonSlots.filter((commonSlot) =>
-      formattedSlots.find(
-        (formattedSlot) =>
-          formattedSlot.date === commonSlot.date &&
-          formattedSlot.time === commonSlot.time
-      )
-    );
-  });
-
-  return commonSlots;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const { eventUrls, startDate, endDate }: AvailabilityRequest = await request.json();
-
-    if (!eventUrls?.length) {
-      return NextResponse.json({ error: "No event URLs provided" }, { status: 400 });
+    const body = await request.json();
+    
+    // Validate request body
+    const parseResult = availabilityRequestSchema.safeParse(body);
+    if (!parseResult.success) {
+      return NextResponse.json({ 
+        error: "Invalid request format",
+        details: parseResult.error.issues 
+      }, { status: 400 });
     }
 
-    const invalidUrls = eventUrls.filter((url) => {
-      try {
-        const parsed = new URL(url);
-        const pathParts = parsed.pathname.split("/").filter(Boolean);
-        return !parsed.hostname.includes("calendly.com") || pathParts.length < 2;
-      } catch {
-        return true;
-      }
-    });
-
-    if (invalidUrls.length > 0) {
-      return NextResponse.json({ error: `Invalid Calendly URLs: ${invalidUrls.join(", ")}` }, { status: 400 });
-    }
-
-    const startTime = parseISO(startDate).toISOString();
-    const endTime = addDays(parseISO(endDate), 1).toISOString();
-
-    const availabilityPromises = eventUrls.map((url) =>
-      fetchPublicAvailability(url, startTime, endTime)
-    );
-
+    const { eventUrls } = parseResult.data;
+    const availabilityPromises = eventUrls.map(fetchAvailabilityFromGPT);
     const allAvailabilities = await Promise.all(availabilityPromises);
-    const commonSlots = findCommonAvailableSlots(allAvailabilities);
 
     return NextResponse.json({
-      slots: commonSlots,
-      message: commonSlots.length === 0 ? "No common availability found" : undefined,
+      slots: allAvailabilities.flat(),
     });
   } catch (error) {
-    console.error("API Error:", error);
-    const message = error instanceof Error ? error.message : "An unexpected error occurred";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Error processing request:", error);
+    return NextResponse.json({ 
+      error: "Internal server error",
+      message: error instanceof Error ? error.message : "Unknown error"
+    }, { status: 500 });
   }
 }

@@ -1,39 +1,38 @@
-import type { CommonSlot, AvailabilityResponse } from "./types"
-import { parseISO, format } from "date-fns"
+import { 
+  CommonSlot, 
+  availabilityResponseSchema 
+} from "@/lib/types";
 
-export async function findCommonAvailability(
-  eventUrls: string[],
-  startDate: string,
-  endDate: string
-): Promise<CommonSlot[]> {
-  const response = await fetch("/api/availability", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ eventUrls, startDate, endDate })
-  })
-
-  const data = await response.json()
-
-  if (!response.ok) {
-    throw new Error(data.error || "Failed to fetch availability")
+export async function findCommonAvailability(eventUrls: string[]): Promise<CommonSlot[]> {
+  if (!eventUrls.length) {
+    return [];
   }
 
-  return (data as AvailabilityResponse).slots
-}
-
-export function formatSlotTime(date: string): string {
-  return format(parseISO(date), "h:mm a")
-}
-
-export function formatSlotDate(date: string): string {
-  return format(parseISO(date), "EEE, MMM d, yyyy")
-}
-
-export function validateCalendlyUrl(url: string): boolean {
   try {
-    const parsed = new URL(url)
-    return parsed.hostname.includes("calendly.com") && parsed.pathname.split("/").length >= 3
-  } catch {
-    return false
+    const response = await fetch("/api/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventUrls }),
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to fetch availability");
+    }
+
+    // Validate the response data
+    const parseResult = availabilityResponseSchema.safeParse(data);
+    if (!parseResult.success) {
+      console.error("Invalid response format:", parseResult.error);
+      throw new Error("Invalid response format from server");
+    }
+
+    return parseResult.data.slots;
+  } catch (error) {
+    console.error("Error in findCommonAvailability:", error);
+    throw error instanceof Error 
+      ? error 
+      : new Error("An unexpected error occurred");
   }
 }
