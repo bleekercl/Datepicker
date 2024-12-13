@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { 
   CommonSlot, 
-  availabilityRequestSchema, 
-  availabilityResponseSchema 
+  availabilityRequestSchema
 } from "@/lib/types";
 
 if (!process.env.OPENAI_API_KEY) {
