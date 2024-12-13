@@ -8,13 +8,13 @@ import {
 async function fetchAvailabilityFromGPT(openai: OpenAI, url: string): Promise<CommonSlot[]> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-4-1106-preview",
       messages: [{
         role: "system",
-        content: "You are a helpful assistant that extracts availability information from Calendly URLs. Return only valid JSON."
+        content: "You are a helpful assistant that extracts availability information from Calendly URLs. Return only valid JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}"
       }, {
         role: "user",
-        content: `Extract available dates and time slots from the following Calendly URL: ${url}. Return the data as JSON in the format: [{"date": "YYYY-MM-DD", "time": "HH:MM"}]`
+        content: `Extract available dates and time slots from the following Calendly URL: ${url}. Return the data as JSON in the format: {\"slots\": [{\"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM\"}]}`
       }],
       response_format: { type: "json_object" }
     });
