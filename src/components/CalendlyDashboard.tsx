@@ -1,3 +1,5 @@
+'use client'
+
 import { type ChangeEvent, useState } from "react"
 import { Plus, X, Calendar, Clock, Loader2, AlertCircle, Link } from "lucide-react"
 import { findCommonAvailability } from "@/lib/calendly"
